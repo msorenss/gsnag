@@ -1,0 +1,13 @@
+[package]
+name = "gsnag-overlay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+gsnag-core.workspace = true
+image.workspace = true
+gtk4.workspace = true
+gtk4-layer-shell.workspace = true

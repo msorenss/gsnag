@@ -1,0 +1,7 @@
+/target/
+/.tools/
+*.deb
+__pycache__/
+/memories/
+/.agents/
+/.codex/

@@ -1,0 +1,24 @@
+[package]
+name = "gsnag"
+description = "Native Wayland screen capture for Raspberry Pi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+gsnag-core.workspace = true
+gsnag-proto.workspace = true
+gsnag-overlay.workspace = true
+gsnag-editor.workspace = true
+image.workspace = true
+serde_json.workspace = true
+gtk4.workspace = true
+libadwaita.workspace = true
+async-channel = "2"
+ksni = { version = "0.3", features = ["blocking"] }
+roxmltree = "0.21"
+tempfile.workspace = true
+serde.workspace = true
