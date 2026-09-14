@@ -3,7 +3,9 @@ use std::{
     cell::{Cell, RefCell},
     io::Cursor,
     path::{Path, PathBuf},
+    process::Command,
     rc::Rc,
+    time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -105,8 +107,10 @@ pub fn open(
     let header = adw::HeaderBar::new();
     let title = adw::WindowTitle::new("gsnag", &tr("Annotation editor"));
     header.set_title_widget(Some(&title));
+    let capture = button("New capture", "Capture a new region (Ctrl+N)");
     let undo = button("Undo", "Undo (Ctrl+Z)");
     let redo = button("Redo", "Redo (Ctrl+Shift+Z)");
+    header.pack_start(&capture);
     header.pack_start(&undo);
     header.pack_start(&redo);
     let save = button("Save project", "Save editable .gsnag project (Ctrl+S)");
@@ -363,6 +367,7 @@ pub fn open(
         e.zoom(zoom);
     });
     bind(&editor, &copy, |e| e.copy());
+    bind(&editor, &capture, |e| e.start_capture());
     bind(&editor, &save, |e| e.start_save(false));
     bind(&editor, &save_as, |e| e.start_save(true));
     bind(&editor, &export, |e| e.start_export());
@@ -624,6 +629,51 @@ impl Editor {
             "Copied image — keep the editor open until pasted if no clipboard manager is running",
         ));
     }
+    fn start_capture(self: &Rc<Self>) {
+        if self.dialog_open.replace(true) {
+            return;
+        }
+        self.cancel_drag();
+        self.window.set_visible(false);
+        let e = self.clone();
+        glib::timeout_add_local_once(Duration::from_millis(250), move || e.spawn_capture());
+    }
+    fn spawn_capture(self: &Rc<Self>) {
+        let result = (|| -> Result<_> {
+            let executable = std::env::current_exe()?;
+            Ok(Command::new(executable)
+                .env("GSNAG_LANGUAGE", gsnag_i18n::language())
+                .args(["capture", "region", "--edit"])
+                .spawn()?)
+        })();
+        let mut child = match result {
+            Ok(child) => child,
+            Err(error) => {
+                self.dialog_open.set(false);
+                self.window.present();
+                self.report_error(error);
+                return;
+            }
+        };
+        let e = self.clone();
+        glib::timeout_add_local(Duration::from_millis(100), move || match child.try_wait() {
+            Ok(Some(status)) => {
+                e.dialog_open.set(false);
+                e.window.present();
+                if !status.success() {
+                    e.report_error(anyhow!("New capture exited with {status}"));
+                }
+                glib::ControlFlow::Break
+            }
+            Ok(None) => glib::ControlFlow::Continue,
+            Err(error) => {
+                e.dialog_open.set(false);
+                e.window.present();
+                e.report_error(error.into());
+                glib::ControlFlow::Break
+            }
+        });
+    }
     fn start_save(self: &Rc<Self>, save_as: bool) {
         if self.dialog_open.replace(true) {
             return;
@@ -828,6 +878,7 @@ fn setup_keys(e: &Rc<Editor>) {
         });
         if ctrl {
             match key.to_lower() {
+                gdk::Key::n => e.start_capture(),
                 gdk::Key::s => e.start_save(shift),
                 gdk::Key::e => e.start_export(),
                 gdk::Key::Return => e.apply_properties(),

@@ -26,12 +26,24 @@ CONFIG = ARTIFACTS / "config"
 CONFIG.mkdir()
 (CONFIG / "rc.xml").write_text("<labwc_config/>\n")
 (CONFIG / "autostart").write_text("")
-ENV = dict(os.environ, GSNAG_LANGUAGE="en", XDG_RUNTIME_DIR=str(RUNTIME), WAYLAND_DISPLAY="wayland-0",
-           WLR_BACKENDS="headless", WLR_HEADLESS_OUTPUTS="1", WLR_RENDERER="pixman",
-           GSK_RENDERER="cairo", GTK_A11Y="none", GTK_USE_PORTAL="0", GIO_USE_VFS="local")
+ENV = dict(
+    os.environ,
+    GSNAG_LANGUAGE="en",
+    XDG_RUNTIME_DIR=str(RUNTIME),
+    WAYLAND_DISPLAY="wayland-0",
+    WLR_BACKENDS="headless",
+    WLR_HEADLESS_OUTPUTS="1",
+    WLR_RENDERER="pixman",
+    GSK_RENDERER="cairo",
+    GTK_A11Y="none",
+    GTK_USE_PORTAL="0",
+    GIO_USE_VFS="local",
+)
 # GTK4 file dialogs can still contact a portal despite GTK_USE_PORTAL=0.
 # Keep them inside this compositor, with no access to the desktop session bus.
-ENV["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + str(RUNTIME / "no-session-bus")
+ENV["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + str(
+    RUNTIME / "no-session-bus"
+)
 ENV["GSETTINGS_BACKEND"] = "memory"
 ENV["XDG_CONFIG_HOME"] = str(ARTIFACTS / "settings")
 ENV.pop("WAYLAND_SOCKET", None)
@@ -43,7 +55,9 @@ children = []
 
 
 def run(*args):
-    return subprocess.run(args, env=ENV, check=True, capture_output=True, text=True)
+    return subprocess.run(
+        args, env=ENV, check=True, capture_output=True, text=True
+    )
 
 
 def wait_until(predicate, seconds=15):
@@ -52,7 +66,9 @@ def wait_until(predicate, seconds=15):
         if predicate():
             return
         time.sleep(0.1)
-    raise AssertionError("Timed out waiting for application; inspect artifacts")
+    raise AssertionError(
+        "Timed out waiting for application; inspect artifacts"
+    )
 
 
 def screenshot(name):
@@ -132,30 +148,96 @@ def spawn_editor(*args):
     return proc
 
 
+def child_pids(proc):
+    path = Path(f"/proc/{proc.pid}/task/{proc.pid}/children")
+    return path.read_text().split() if path.exists() else []
+
+
 try:
-    xmls = glob.glob(str(ROOT / ".tools/cargo/registry/src/*/wayland-protocols-wlr-*/wlr-protocols/unstable/wlr-virtual-pointer-unstable-v1.xml"))
-    xmls += glob.glob(os.path.expanduser("~/.cargo/registry/src/*/wayland-protocols-wlr-*/wlr-protocols/unstable/wlr-virtual-pointer-unstable-v1.xml"))
+    pointer_xml = (
+        "*/wayland-protocols-wlr-*/wlr-protocols/unstable/"
+        "wlr-virtual-pointer-unstable-v1.xml"
+    )
+    xmls = glob.glob(str(ROOT / ".tools/cargo/registry/src" / pointer_xml))
+    xmls += glob.glob(
+        os.path.expanduser("~/.cargo/registry/src/" + pointer_xml)
+    )
     xml = os.environ.get("WLR_POINTER_XML") or sorted(xmls)[-1]
-    run("wayland-scanner", "client-header", xml, str(ARTIFACTS / "virtual-pointer.h"))
-    run("wayland-scanner", "private-code", xml, str(ARTIFACTS / "virtual-pointer.c"))
-    flags = shlex.split(run("pkg-config", "--cflags", "--libs", "wayland-client").stdout)
-    run("cc", "-Wall", "-Wextra", "-Werror", str(ROOT / "tests/virtual-pointer.c"),
-        str(ARTIFACTS / "virtual-pointer.c"), "-I" + str(ARTIFACTS), *flags, "-o", str(ARTIFACTS / "pointer"))
-    flags = shlex.split(run("pkg-config", "--cflags", "--libs", "gtk4-layer-shell-0", "gtk4").stdout)
-    run("cc", "-Wall", "-Wextra", "-Werror", str(ROOT / "tests/image-drop-target.c"),
-        *flags, "-o", str(ARTIFACTS / "drop-target"))
+    run(
+        "wayland-scanner",
+        "client-header",
+        xml,
+        str(ARTIFACTS / "virtual-pointer.h"),
+    )
+    run(
+        "wayland-scanner",
+        "private-code",
+        xml,
+        str(ARTIFACTS / "virtual-pointer.c"),
+    )
+    flags = shlex.split(
+        run("pkg-config", "--cflags", "--libs", "wayland-client").stdout
+    )
+    run(
+        "cc",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        str(ROOT / "tests/virtual-pointer.c"),
+        str(ARTIFACTS / "virtual-pointer.c"),
+        "-I" + str(ARTIFACTS),
+        *flags,
+        "-o",
+        str(ARTIFACTS / "pointer"),
+    )
+    flags = shlex.split(
+        run(
+            "pkg-config",
+            "--cflags",
+            "--libs",
+            "gtk4-layer-shell-0",
+            "gtk4",
+        ).stdout
+    )
+    run(
+        "cc",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        str(ROOT / "tests/image-drop-target.c"),
+        *flags,
+        "-o",
+        str(ARTIFACTS / "drop-target"),
+    )
     log = open(ARTIFACTS / "labwc.log", "w")
-    compositor = subprocess.Popen(["labwc", "-C", str(CONFIG)], env=ENV, stdout=log, stderr=log)
+    compositor = subprocess.Popen(
+        ["labwc", "-C", str(CONFIG)], env=ENV, stdout=log, stderr=log
+    )
     log.close()
     children.append(compositor)
     wait_until(lambda: (RUNTIME / "wayland-0").exists())
-    pointer = subprocess.Popen([str(ARTIFACTS / "pointer")], env=ENV, stdin=subprocess.PIPE, text=True)
+    pointer = subprocess.Popen(
+        [str(ARTIFACTS / "pointer")],
+        env=ENV,
+        stdin=subprocess.PIPE,
+        text=True,
+    )
     children.append(pointer)
     base = Image.new("RGBA", (640, 360))
     for y in range(360):
         for x in range(640):
-            base.putpixel((x, y), (253, 0, 253, 255) if x < 2 or y < 2 or x >= 638 or y >= 358
-                          else (40 + x // 4, 35 + y // 2, 100 + (x // 20 + y // 20) % 2 * 80, 255))
+            border = x < 2 or y < 2 or x >= 638 or y >= 358
+            color = (
+                (253, 0, 253, 255)
+                if border
+                else (
+                    40 + x // 4,
+                    35 + y // 2,
+                    100 + (x // 20 + y // 20) % 2 * 80,
+                    255,
+                )
+            )
+            base.putpixel((x, y), color)
     base_path = ARTIFACTS / "base.png"
     base.save(base_path)
     export_path = ARTIFACTS / "edited.png"
@@ -200,38 +282,61 @@ try:
     content = project_content(project)
     objects = content["annotations"]
     assert len(objects) == 12, [a["kind"] for a in objects]
-    assert next(a for a in objects if a["kind"] == "Callout")["text"] == "Åäö — klart"
+    callout = next(a for a in objects if a["kind"] == "Callout")
+    assert callout["text"] == "Åäö — klart"
     rect = next(a for a in objects if a["kind"] == "Rect")
-    for name, expected in {"x": 80, "y": 170, "width": 180, "height": 120}.items():
+    expected_rect = {"x": 80, "y": 170, "width": 180, "height": 120}
+    for name, expected in expected_rect.items():
         assert abs(rect["bounds"][name] - expected) < 0.01, rect
     assert [a["number"] for a in objects if a["kind"] == "Step"] == [1, 2]
-    assert len(next(a for a in objects if a["kind"] == "Freehand")["points"]) >= 4
-    print("PASS: all annotation tools, move/resize, undo/redo, deletion, step numbering, project save", flush=True)
+    freehand = next(a for a in objects if a["kind"] == "Freehand")
+    assert len(freehand["points"]) >= 4
+    print(
+        "PASS: all annotation tools, move/resize, undo/redo, deletion, "
+        "step numbering, project save",
+        flush=True,
+    )
 
     key("e", ctrl=True)
     save_dialog(export_path)
     cli_export = ARTIFACTS / "from-project.png"
     run(GSNAG, "export", str(project), "--out", str(cli_export))
     rendered = Image.open(export_path).convert("RGBA")
-    assert rendered.tobytes() == Image.open(cli_export).convert("RGBA").tobytes()
+    cli_rendered = Image.open(cli_export).convert("RGBA")
+    assert rendered.tobytes() == cli_rendered.tobytes()
     assert rendered.tobytes() != base.tobytes()
     if WL_PASTE:
         key("Escape")
         key("c", ctrl=True)
         pasted = ARTIFACTS / "clipboard.png"
         with pasted.open("wb") as output:
-            subprocess.run([WL_PASTE, "--type", "image/png"], env=ENV, stdout=output, check=True, timeout=10)
-        assert Image.open(pasted).convert("RGBA").tobytes() == rendered.tobytes()
+            subprocess.run(
+                [WL_PASTE, "--type", "image/png"],
+                env=ENV,
+                stdout=output,
+                check=True,
+                timeout=10,
+            )
+        pasted_image = Image.open(pasted).convert("RGBA")
+        assert pasted_image.tobytes() == rendered.tobytes()
         print("PASS: clipboard pixels match PNG export", flush=True)
     else:
-        print("SKIP: install wl-paste or set WL_PASTE to verify clipboard", flush=True)
+        print(
+            "SKIP: install wl-paste or set WL_PASTE to verify clipboard",
+            flush=True,
+        )
     dropped = ARTIFACTS / "dropped.png"
     before_drop = screenshot("pre-drop.png").getpixel((1180, 100))
-    receiver = subprocess.Popen([str(ARTIFACTS / "drop-target"), str(dropped)], env=ENV)
+    receiver = subprocess.Popen(
+        [str(ARTIFACTS / "drop-target"), str(dropped)], env=ENV
+    )
     children.append(receiver)
     for attempt in range(30):
         assert receiver.poll() is None, "Drop target exited during startup"
-        if screenshot(f"drop-ready-{attempt}.png").getpixel((1180, 100)) != before_drop:
+        ready_pixel = screenshot(f"drop-ready-{attempt}.png").getpixel(
+            (1180, 100)
+        )
+        if ready_pixel != before_drop:
             break
         time.sleep(0.2)
     else:
@@ -250,30 +355,78 @@ try:
     wait_until(dropped.exists)
     assert receiver.wait(timeout=5) == 0
     assert Image.open(dropped).convert("RGBA").tobytes() == rendered.tobytes()
-    print("PASS: dragging the image offers a PNG that matches the export", flush=True)
+    print(
+        "PASS: dragging the image offers a PNG that matches the export",
+        flush=True,
+    )
     key("q", ctrl=True)
     assert editor.wait(timeout=10) == 0
     reopened = spawn_editor("edit", str(project))
     key("Escape")
     key("1", ctrl=True)
     screenshot("reopened-project.png")
+    key("n", ctrl=True)
+    wait_until(lambda: child_pids(reopened))
+    new_capture_pid = child_pids(reopened)[0]
+    selection = screenshot("new-capture-selection.png")
+    assert not any(
+        pixel[:3] == (253, 0, 253) for pixel in selection.getdata()
+    ), "The hidden editor is visible in the selection image"
+    key("Escape")
+    wait_until(lambda: not Path(f"/proc/{new_capture_pid}").exists())
+    assert reopened.poll() is None, (
+        "Cancelling a new capture closed the original editor"
+    )
+    restored = screenshot("new-capture-cancelled.png")
+    assert any(
+        pixel[:3] == (253, 0, 253) for pixel in restored.getdata()
+    ), "The original editor did not return after cancellation"
+    print(
+        "PASS: editor hides for a new capture and returns after cancellation",
+        flush=True,
+    )
     draw("x", [(20, 20), (620, 340)])
     key("z", ctrl=True)
     key("y", ctrl=True)
     key("s", ctrl=True)
     time.sleep(0.5)
     crop = project_content(project)["crop"]
-    assert crop == {"x": 20.0, "y": 20.0, "width": 600.0, "height": 320.0}, crop
+    expected_crop = {
+        "x": 20.0,
+        "y": 20.0,
+        "width": 600.0,
+        "height": 320.0,
+    }
+    assert crop == expected_crop, crop
     cropped = ARTIFACTS / "cropped.png"
     run(GSNAG, "export", str(project), "--out", str(cropped))
-    assert Image.open(cropped).convert("RGBA").tobytes() == rendered.crop((20, 20, 620, 340)).tobytes()
-    print("PASS: non-destructive crop, crop undo/redo and crop project persistence", flush=True)
+    cropped_image = Image.open(cropped).convert("RGBA")
+    assert cropped_image.tobytes() == rendered.crop(
+        (20, 20, 620, 340)
+    ).tobytes()
+    print(
+        "PASS: non-destructive crop, crop undo/redo and crop project "
+        "persistence",
+        flush=True,
+    )
     key("q", ctrl=True)
-    assert reopened.wait(timeout=10) == 0, "Saved project should close without a dirty prompt"
-    print("PASS: GUI and CLI exports agree, project reopens with editable objects", flush=True)
+    assert reopened.wait(timeout=10) == 0, (
+        "Saved project should close without a dirty prompt"
+    )
+    print(
+        "PASS: GUI and CLI exports agree, project reopens with editable "
+        "objects",
+        flush=True,
+    )
 
-    # Capture-to-editor must also work after the region selector's GTK loop exits.
-    captured = spawn_editor("capture", "region", "--edit", "--out", str(ARTIFACTS / "capture.png"))
+    # Capture-to-editor must work after the selector's GTK loop exits.
+    captured = spawn_editor(
+        "capture",
+        "region",
+        "--edit",
+        "--out",
+        str(ARTIFACTS / "capture.png"),
+    )
     point(400, 200)
     button(1)
     point(800, 500)
@@ -284,18 +437,27 @@ try:
     screenshot("capture-to-editor.png")
     key("q", ctrl=True)
     time.sleep(0.3)
-    assert captured.poll() is None, "An unsaved capture should offer saving before closing"
+    assert captured.poll() is None, (
+        "An unsaved capture should offer saving before closing"
+    )
     key("Escape")
     capture_project = ARTIFACTS / "capture.gsnag"
     key("s", ctrl=True)
     save_dialog(capture_project)
     with zipfile.ZipFile(capture_project) as archive:
         import io
-        assert Image.open(io.BytesIO(archive.read("base.png"))).size == (400, 300)
+        captured_base = Image.open(io.BytesIO(archive.read("base.png")))
+        assert captured_base.size == (400, 300)
     key("q", ctrl=True)
     assert captured.wait(timeout=10) == 0
-    assert not (ARTIFACTS / "capture.png").exists(), "--edit must not export before confirmation"
-    print("PASS: region selection opens editor, project retains captured pixels, no automatic export", flush=True)
+    assert not (ARTIFACTS / "capture.png").exists(), (
+        "--edit must not export before confirmation"
+    )
+    print(
+        "PASS: region selection opens editor, project retains captured "
+        "pixels, no automatic export",
+        flush=True,
+    )
 finally:
     for child in reversed(children):
         if child.poll() is None:

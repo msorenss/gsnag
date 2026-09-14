@@ -50,7 +50,7 @@ On the Pi running Debian/Raspberry Pi OS Trixie:
 ```sh
 sudo apt-get install dpkg-dev binutils desktop-file-utils
 make deb
-sudo apt-get install ./target/debian/gsnag_0.2.0_arm64.deb
+sudo apt-get install ./target/debian/gsnag_0.2.1_arm64.deb
 ```
 
 Open **gsnag** in the app menu (Graphics) to add its system tray icon. Click
@@ -233,6 +233,9 @@ make run ARGS='export /tmp/work.gsnag --out /tmp/annotated.webp'
 filename in its export dialog. The editor does not write an image automatically.
 `edit` opens PNG, JPEG, WebP or `.gsnag` files. `export` renders a project without
 opening a window and preserves existing files unless `--overwrite` is specified.
+Use **New capture** (Ctrl+N) to select another region without closing the editor.
+The current editor hides before the desktop is frozen and returns unchanged if
+selection is cancelled; a completed capture opens in a new editor window.
 
 Choose a tool and drag on the image. Text and callouts also support a single
 click to create a default-size object. Step markers are numbered automatically.
@@ -257,6 +260,7 @@ Scroll the sidebar to reach the remaining controls on a small display.
 | Fit / actual pixels | Ctrl+0 / Ctrl+1 |
 | Save project / save project as | Ctrl+S / Ctrl+Shift+S |
 | Export image / copy image | Ctrl+E / Ctrl+C |
+| Capture a new region | Ctrl+N |
 | Cancel a gesture and return to Select | Esc |
 
 Crop changes the export area without discarding original pixels; **Reset crop**

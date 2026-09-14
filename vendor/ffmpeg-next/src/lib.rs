@@ -96,7 +96,7 @@ fn init_filter() {
     filter::register_all();
 }
 
-#[cfg(not(feature = "filter"))]
+#[cfg(all(not(feature = "filter"), not(feature = "ffmpeg_5_0")))]
 fn init_filter() {}
 
 #[cfg_attr(
