@@ -1,5 +1,9 @@
 # gsnag
 
+<p align="center">
+  <img src="logo.png" alt="gsnag" width="420">
+</p>
+
 Native Wayland screen capture for Raspberry Pi OS Trixie / labwc, written in Rust.
 Still-image capture includes output capture and an interactive region selector
 with a frozen desktop background, a GTK4 annotation editor and a system tray
@@ -50,12 +54,12 @@ On the Pi running Debian/Raspberry Pi OS Trixie:
 ```sh
 sudo apt-get install dpkg-dev binutils desktop-file-utils
 make deb
-sudo apt-get install ./target/debian/gsnag_0.2.1_arm64.deb
+sudo apt-get install ./target/debian/gsnag_0.2.2_arm64.deb
 ```
 
 Open **gsnag** in the app menu (Graphics) to add its system tray icon. Click
 the icon to select a region and press **Enter** to open it in the editor.
-The package includes the executable and an app icon;
+The package includes the executable and the gsnag app icon;
 apt resolves runtime library dependencies. This is a native package for the
 build machine's architecture, generated from a release build. To replace a test
 build with the same version, rebuild and add `--reinstall` to the install command.

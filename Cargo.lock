@@ -847,7 +847,7 @@ dependencies = [
 
 [[package]]
 name = "gsnag"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -871,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "gsnag-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "image",
@@ -880,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "gsnag-editor"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "gsnag-core",
@@ -897,7 +897,7 @@ dependencies = [
 
 [[package]]
 name = "gsnag-i18n"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -906,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "gsnag-overlay"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "gsnag-core",
@@ -918,7 +918,7 @@ dependencies = [
 
 [[package]]
 name = "gsnag-proto"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "gsnag-core",
@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "gsnag-record"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "ffmpeg-next",

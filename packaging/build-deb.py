@@ -50,10 +50,7 @@ def main():
             "usr/share/applications/gsnag.desktop",
         )
         run("desktop-file-validate", str(desktop))
-        install(
-            "packaging/gsnag.svg",
-            "usr/share/icons/hicolor/scalable/apps/gsnag.svg",
-        )
+        install("icon.png", "usr/share/icons/hicolor/512x512/apps/gsnag.png")
         install("README.md", "usr/share/doc/gsnag/README.md")
         install("packaging/copyright", "usr/share/doc/gsnag/copyright")
         (work / "debian").mkdir(exist_ok=True)

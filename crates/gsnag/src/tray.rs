@@ -43,20 +43,14 @@ impl ksni::Tray for Tray {
         "gsnag".into()
     }
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        // Embedded fallback also works before the package icon is installed.
+        let source = image::load_from_memory(include_bytes!("../../../icon.png"))
+            .expect("embedded app icon must be a valid PNG")
+            .resize_exact(32, 32, image::imageops::FilterType::Lanczos3)
+            .to_rgba8();
         let mut argb = Vec::with_capacity(32 * 32 * 4);
-        for y in 0..32 {
-            for x in 0..32 {
-                let corner = ((8..=10).contains(&x) || (22..=24).contains(&x))
-                    && ((8..=14).contains(&y) || (18..=24).contains(&y))
-                    || ((8..=10).contains(&y) || (22..=24).contains(&y))
-                        && ((8..=14).contains(&x) || (18..=24).contains(&x));
-                argb.extend_from_slice(if corner {
-                    &[255, 255, 255, 255]
-                } else {
-                    &[255, 53, 132, 228]
-                });
-            }
+        for pixel in source.pixels() {
+            let [red, green, blue, alpha] = pixel.0;
+            argb.extend_from_slice(&[alpha, red, green, blue]);
         }
         vec![ksni::Icon {
             width: 32,
@@ -199,6 +193,7 @@ fn launcher(
     let window = libadwaita::ApplicationWindow::builder()
         .application(app)
         .title("gsnag")
+        .icon_name("gsnag")
         .default_width(380)
         .content(&view)
         .build();
