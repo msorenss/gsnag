@@ -1,20 +1,30 @@
 [Desktop Entry]
 Type=Application
 Name=gsnag
-GenericName=Screenshot editor
-GenericName[sv]=Skärmbildsredigerare
-Comment=Select a screen region and annotate it
-Comment[sv]=Markera ett skärmområde och redigera bilden
+GenericName=Screen capture and recording
+GenericName[sv]=Skärmbilder och inspelning
+GenericName[de]=Bildschirmaufnahme und Video
+Comment=Capture, annotate and record your screen
+Comment[sv]=Fånga, redigera och spela in skärmen
+Comment[de]=Bildschirm aufnehmen und Bilder bearbeiten
 Exec=gsnag tray
 Icon=gsnag
 Terminal=false
 Categories=Graphics;
-Keywords=screenshot;capture;annotation;
+Keywords=screenshot;capture;annotation;video;recording;
 Keywords[sv]=skärmbild;skärmdump;markering;
 StartupNotify=false
-Actions=CaptureRegion;
+Keywords[de]=Bildschirmfoto;Aufnahme;Video;
+Actions=CaptureRegion;Record;
 
 [Desktop Action CaptureRegion]
 Name=Capture region
 Name[sv]=Fånga region
+Name[de]=Bereich aufnehmen
 Exec=gsnag capture region --edit
+
+[Desktop Action Record]
+Name=Record video
+Name[sv]=Spela in video
+Name[de]=Video aufnehmen
+Exec=gsnag record

@@ -1,6 +1,7 @@
 //! Native Wayland discovery and shared-memory screen capture.
 
 mod capture;
+pub use capture::OutputStream;
 
 use std::time::{Duration, Instant};
 
@@ -157,8 +158,20 @@ impl Client {
     }
 
     fn wait_until(&mut self, done: impl Fn(&State) -> bool) -> Result<()> {
+        self.wait_until_cancel(done, &std::sync::atomic::AtomicBool::new(false))
+    }
+
+    fn wait_until_cancel(
+        &mut self,
+        done: impl Fn(&State) -> bool,
+        stop: &std::sync::atomic::AtomicBool,
+    ) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
+            anyhow::ensure!(
+                !stop.load(std::sync::atomic::Ordering::Relaxed),
+                "Recording stopped"
+            );
             self.queue.dispatch_pending(&mut self.state)?;
             if let Some(error) = &self.state.capture.error {
                 bail!("{error}");
@@ -172,9 +185,9 @@ impl Client {
             self.queue.flush()?;
             if let Some(guard) = self.queue.prepare_read() {
                 let mut fds = [PollFd::new(&self.connection, PollFlags::IN)];
-                let timeout = Timespec::try_from(remaining)?;
+                let timeout = Timespec::try_from(remaining.min(Duration::from_millis(50)))?;
                 match poll(&mut fds, Some(&timeout)) {
-                    Ok(0) => bail!("Wayland operation timed out after 10 seconds"),
+                    Ok(0) => continue,
                     Ok(_) => {
                         guard.read()?;
                     }

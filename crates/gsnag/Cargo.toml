@@ -22,3 +22,6 @@ ksni = { version = "0.3", features = ["blocking"] }
 roxmltree = "0.21"
 tempfile.workspace = true
 serde.workspace = true
+gsnag-i18n.workspace = true
+gsnag-record.workspace = true
+ctrlc = "3"

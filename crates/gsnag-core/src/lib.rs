@@ -7,7 +7,7 @@ use serde::Serialize;
 mod region;
 pub use region::{Rect, crop_region, desktop_bounds};
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Output {
     pub id: u32,
     pub name: String,

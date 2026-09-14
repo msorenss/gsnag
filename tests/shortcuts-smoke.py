@@ -16,7 +16,7 @@ rc = config / 'rc.xml'
 original = '<labwc_config><keyboard><default/><keybind key="Print"><action name="Execute"><command>false</command></action></keybind></keyboard></labwc_config>\n'
 rc.write_text(original)
 (config / 'autostart').write_text('')
-env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), WAYLAND_DISPLAY='wayland-0',
+env = dict(os.environ, GSNAG_LANGUAGE="en", XDG_RUNTIME_DIR=str(runtime), WAYLAND_DISPLAY='wayland-0',
            WLR_BACKENDS='headless', WLR_HEADLESS_OUTPUTS='1', WLR_RENDERER='pixman',
            GSK_RENDERER='cairo', GTK_A11Y='none', GSETTINGS_BACKEND='memory',
            DBUS_SESSION_BUS_ADDRESS='unix:path=' + str(runtime / 'no-bus'))

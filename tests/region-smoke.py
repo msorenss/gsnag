@@ -25,7 +25,7 @@ CONFIG = ARTIFACTS / "config"
 CONFIG.mkdir()
 (CONFIG / "rc.xml").write_text("<labwc_config/>\n")
 (CONFIG / "autostart").write_text("")
-ENV = dict(os.environ, XDG_RUNTIME_DIR=str(RUNTIME), WAYLAND_DISPLAY="wayland-0",
+ENV = dict(os.environ, GSNAG_LANGUAGE="en", XDG_RUNTIME_DIR=str(RUNTIME), WAYLAND_DISPLAY="wayland-0",
            WLR_BACKENDS="headless", WLR_HEADLESS_OUTPUTS="2", WLR_RENDERER="pixman",
            GSK_RENDERER="cairo", GTK_A11Y="none")
 ENV.pop("WAYLAND_SOCKET", None)

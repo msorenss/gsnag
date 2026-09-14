@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+gsnag-i18n.workspace = true
 anyhow.workspace = true
 gsnag-core.workspace = true
 image.workspace = true

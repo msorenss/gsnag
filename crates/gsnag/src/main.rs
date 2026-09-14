@@ -4,18 +4,30 @@ use anyhow::{Context, Result, ensure};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use gsnag_proto::{Backend, FrameSource, WaylandCapture};
 
+mod record_ui;
+mod recording;
 mod shortcuts;
 mod tray;
 
 #[derive(Parser)]
 #[command(version, about = "Native Wayland screen capture")]
 struct Cli {
+    /// Override the interface language for this launch.
+    #[arg(long, global=true, value_parser=["en","sv","de"])]
+    language: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
+    /// Record screen video, or open recording settings.
+    Record(recording::Options),
+    /// Show or save the interface language (en, sv, de, auto).
+    Language {
+        #[arg(value_parser=["en","sv","de","auto"])]
+        code: Option<String>,
+    },
     /// Install, remove or inspect labwc keyboard shortcuts.
     Shortcuts(shortcuts::Options),
     /// Keep a capture shortcut in the desktop system tray.
@@ -102,7 +114,17 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    if let Some(code) = cli.language {
+        gsnag_i18n::set_language(&code)?;
+    }
     match cli.command {
+        Command::Record(options) => recording::run(options)?,
+        Command::Language { code } => {
+            if let Some(code) = code {
+                gsnag_i18n::save_language(&code)?;
+            }
+            println!("{}", gsnag_i18n::language());
+        }
         Command::Shortcuts(options) => shortcuts::run(options)?,
         Command::Tray => tray::run()?,
         Command::Edit { input, out } => {

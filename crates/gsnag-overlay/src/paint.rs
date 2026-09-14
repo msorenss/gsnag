@@ -176,9 +176,9 @@ pub fn draw(
         }
     }
     let mut hints = vec![
-        "Drag to select · Enter to save · Esc / right-click to cancel".to_string(),
-        "Drag inside to move · Corners resize · Shift-drag locks ratio".to_string(),
-        "Arrows move · Ctrl+arrows resize · Shift+arrows: 10 px".to_string(),
+        gsnag_i18n::tr("Drag to select · Enter to save · Esc / right-click to cancel"),
+        gsnag_i18n::tr("Drag inside to move · Corners resize · Shift-drag locks ratio"),
+        gsnag_i18n::tr("Arrows move · Ctrl+arrows resize · Shift+arrows: 10 px"),
     ];
     if let Some(rect) = selection.rect {
         hints.insert(

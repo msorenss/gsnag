@@ -3,12 +3,15 @@
 Native Wayland screen capture for Raspberry Pi OS Trixie / labwc, written in Rust.
 Still-image capture includes output capture and an interactive region selector
 with a frozen desktop background, a GTK4 annotation editor and a system tray
-shortcut. Recording is a later phase.
+shortcut. Screen recording supports H.264 video and optional PipeWire audio.
+The interface supports English, Swedish and German.
 
 ## Build and run
 
 ```sh
-sudo apt-get install libgtk-4-dev libgtk4-layer-shell-dev libadwaita-1-dev
+sudo apt-get install libgtk-4-dev libgtk4-layer-shell-dev libadwaita-1-dev \
+  clang libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+  libswresample-dev libpipewire-0.3-dev
 make build
 make run ARGS='outputs'
 make run ARGS='doctor'
@@ -33,7 +36,9 @@ installed in `.tools/`; the Makefile sets the necessary environment automaticall
 Elsewhere, install Rust through rustup, then run the same make targets. The current
 capture backend uses native Rust Wayland protocols; the region selector requires
 GTK4 (4.12+) and gtk4-layer-shell (1.0+). The editor requires libadwaita (1.5+).
-FFmpeg is not needed yet. Build
+Recording links to FFmpeg (including libx264/AAC) and PipeWire; it does not invoke
+external capture or encoding commands. Raspberry Pi-specific FFmpeg pixel formats
+are handled by the documented compatibility patch in `vendor/`. Build
 concurrency defaults to three jobs for the Pi. Development debug symbols are
 disabled to reduce GTK build memory; use `CARGO_PROFILE_DEV_DEBUG=1` when needed
 for debugging. For a lower-memory first build, use `CARGO_BUILD_JOBS=1 make build`.
@@ -45,7 +50,7 @@ On the Pi running Debian/Raspberry Pi OS Trixie:
 ```sh
 sudo apt-get install dpkg-dev binutils desktop-file-utils
 make deb
-sudo apt-get install ./target/debian/gsnag_0.1.2_arm64.deb
+sudo apt-get install ./target/debian/gsnag_0.2.0_arm64.deb
 ```
 
 Open **gsnag** in the app menu (Graphics) to add its system tray icon. Click
@@ -93,20 +98,96 @@ and recording shortcuts are not implemented yet.
 
 Run `gsnag tray`, or open gsnag from the app menu. Only one tray instance runs
 per desktop session. Left-click captures a region; right-click opens the menu
-with **Fånga region**, **Fånga hela skrivbordet** and **Avsluta gsnag**. Some
+with capture actions, **Record video…**, pause/resume/stop, **Language** and
+**Quit gsnag** (translated into the selected language). Some
 panels show the menu for both mouse buttons. Full desktop capture includes all
 outputs and opens the editor. The desktop entry also offers a direct region
 capture action for launchers that support application actions.
 
 While a capture/editor launched from the tray is open, its capture actions are
-disabled. Closing the editor or cancelling selection enables them again. Exiting
-the tray leaves an already open editor running. A short delay lets the panel menu
+disabled. Recording settings also keep capture actions busy until closed.
+Closing the editor or cancelling selection enables them again. Exiting
+the tray leaves an already open editor or recording window running. A short delay lets the panel menu
 close before the screen is captured.
 
 The icon uses StatusNotifierItem, supported by wf-panel-pi on this machine.
 If the panel is unavailable, a small window offers the same capture actions;
 the tray reconnects when the panel returns. Capture failures appear in that
 window. This increment does not enable login autostart or change desktop settings.
+
+## Video recording
+
+Choose **Record video…** in the tray, the app launcher's recording action, or run:
+
+```sh
+gsnag record
+```
+
+Choose a region, the entire desktop, or a display; select audio, frame rate,
+maximum width and MP4/MKV. Press **Record…**, choose a filename, and confirm a
+region with Enter if requested. **Pause** removes the paused time from both
+video and audio. **Stop and save** finalizes the file; closing the recording
+window during capture also stops and saves, then shows the result. Minimize the
+window or keep it outside the selected region so it does not appear in the clip.
+The tray also offers pause, resume and stop controls.
+
+For terminal use:
+
+```sh
+gsnag record output --all --out ~/Videos/desktop.mp4 --audio system
+gsnag record output HDMI-A-1 --out ~/Videos/demo.mkv --audio both --cursor
+gsnag record region --out ~/Videos/region.mp4 --fps 15 --max-width 1280
+gsnag record output --all --out /tmp/test.mp4 --duration 10
+gsnag record pause
+gsnag record resume
+gsnag record status
+gsnag record stop
+```
+
+Ctrl+C also stops and finalizes a terminal recording. One recording may run per
+user runtime directory. CLI destinations are preserved unless `--overwrite` is
+specified; the graphical file dialog confirms replacement. Files are written to
+a temporary file beside the destination and committed only after finalization.
+The destination directory must already exist. Forced termination or power loss
+cannot guarantee a usable file; use Stop or Ctrl+C to finish it.
+
+Audio choices are `none` (default), `system`, `microphone`, and `both`. The last
+mixes both sources at half volume each to reduce clipping. Devices default to the
+desktop's PipeWire input/output; choose them in system sound settings. CLI options
+`--microphone NODE_NAME` and `--system NODE_NAME` select specific PipeWire nodes.
+Recording waits for requested sources to become available before starting;
+unavailable sources report an error. Video is H.264/YUV420P; audio is AAC stereo
+at 48 kHz. MP4 and MKV contain the same codecs.
+
+Defaults are 15 fps and maximum width 1280 pixels. Video dimensions are made even,
+never upscaled, and limited to 2160 pixels high. Encoding uses the CPU; start with
+these settings on a Pi and increase quality after testing your workload. If
+encoding falls over a second behind, gsnag finalizes the clip and reports that
+resolution or frame rate should be lowered. A compositor/output change ends the
+recording with a saved clip and a warning when possible. Multi-output capture is
+sequential, with logical desktop geometry; individual outputs use native pixels.
+There is no hardware encoding, webcam overlay, video editor, or global recording
+key binding in this version.
+
+## Language
+
+Select **Language → Svenska / English / Deutsch / System language** in the tray.
+The menu updates immediately and newly opened windows use that language. Existing
+editor and recording windows keep their launch language. Alternatively:
+
+```sh
+gsnag language sv       # Save Swedish as the preference
+gsnag language de       # German
+gsnag language auto     # Follow the system again
+gsnag --language en record  # English for this launch only
+```
+
+`GSNAG_LANGUAGE=sv` is an environment override. Otherwise gsnag uses the saved
+preference, then `LC_ALL`, `LC_MESSAGES`, or `LANG`, with English as fallback.
+English, Swedish and German messages are embedded, so gsnag needs no extra locale
+package. Standard GTK dialogs follow the desktop locale; technical CLI help and
+library error details remain English. See [translation instructions](locales/README.md)
+to add a language.
 
 ## Region selection
 
@@ -205,7 +286,8 @@ Closing with unsaved edits offers saving the project, discarding, or continuing.
 | `gsnag` | Capture, editor and project-export CLI |
 | `gsnag-overlay` | GTK4 layer-shell region selection, frozen background and input handling |
 | `gsnag-editor` | GTK4/libadwaita editor, objects/history, Cairo/Pango rendering and project/export storage |
-| `gsnag-record` | Skeleton for software encoding and PipeWire audio |
+| `gsnag-record` | Continuous Wayland capture, native H.264/AAC encoding, PipeWire capture and audio mixing |
+| `gsnag-i18n` | Embedded translation catalogs, locale detection and saved language preference |
 
 Single-output images retain native pixel resolution. `--all` combines outputs at
 one pixel per logical desktop coordinate, including negative positions and
@@ -234,7 +316,7 @@ so moving content across monitors is not an atomic desktop snapshot.
 - Phase 4: the single-instance tray and labwc shortcut install/status/uninstall
   are implemented. Configuration UI, history and login autostart remain upcoming.
 - A native `.deb` and desktop menu launcher are available now through `make deb`,
-  using dpkg tools. Later phases add recording and distribution packaging polish.
+  using dpkg tools. Version 0.2.0 adds screen recording and locale support.
 
 The optional `python3 tests/region-smoke.py` integration test starts a private
 headless labwc with two outputs (scale 1 and 2, including a negative origin).
@@ -263,6 +345,12 @@ Super+Shift+S bindings on a private labwc, checks idempotent installation,
 byte-exact removal, preservation of unrelated edits and removal of a generated
 configuration. It uses the same `GSNAG`/`WTYPE` overrides and never installs
 bindings in the user's configuration.
+
+`python3 tests/record-smoke.py` checks native MP4/MKV encoding, both capture
+protocols, pause/resume/stop, singleton protection, overwrite protection and a
+static desktop recording. It additionally needs FFmpeg/ffprobe for independent
+playback verification. `python3 tests/locales.py` checks catalog coverage,
+placeholders and preference precedence.
 
 See [implementation notes](docs/implementation.md) for capture constraints and
 protocol references. Machine-specific development notes are kept outside Git.

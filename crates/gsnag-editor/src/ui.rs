@@ -1,3 +1,4 @@
+use gsnag_i18n::{format as tf, tr};
 use std::{
     cell::{Cell, RefCell},
     io::Cursor,
@@ -96,13 +97,13 @@ pub fn open(
     let renderer = Renderer::new(&doc)?;
     let rendered = renderer.render(&doc)?;
     let window = adw::Window::builder()
-        .title("gsnag — Editor")
+        .title(tr("gsnag — Editor"))
         .default_width(1120)
         .default_height(760)
         .build();
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let header = adw::HeaderBar::new();
-    let title = adw::WindowTitle::new("gsnag", "Annotation editor");
+    let title = adw::WindowTitle::new("gsnag", &tr("Annotation editor"));
     header.set_title_widget(Some(&title));
     let undo = button("Undo", "Undo (Ctrl+Z)");
     let redo = button("Redo", "Redo (Ctrl+Shift+Z)");
@@ -148,8 +149,8 @@ pub fn open(
     let mut tools = Vec::new();
     let mut group: Option<gtk4::ToggleButton> = None;
     for (i, (tool, label)) in specs.into_iter().enumerate() {
-        let button = gtk4::ToggleButton::with_label(label);
-        button.set_tooltip_text(Some(tool.name()));
+        let button = gtk4::ToggleButton::with_label(&tr(label));
+        button.set_tooltip_text(Some(&tr(tool.name())));
         button.set_group(group.as_ref());
         if group.is_none() {
             group = Some(button.clone());
@@ -163,7 +164,7 @@ pub fn open(
     let color =
         gtk4::ColorDialogButton::new(Some(gtk4::ColorDialog::builder().with_alpha(true).build()));
     color.set_rgba(&gdk::RGBA::new(0.92, 0.20, 0.18, 1.0));
-    color.set_tooltip_text(Some("Annotation color"));
+    color.set_tooltip_text(Some(&tr("Annotation color")));
     sidebar.append(&row("Color", &color));
     let swatches = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     for rgba in [
@@ -202,14 +203,14 @@ pub fn open(
     let font = gtk4::SpinButton::with_range(8.0, 144.0, 1.0);
     font.set_value(28.0);
     sidebar.append(&row("Text size", &font));
-    let filled = gtk4::CheckButton::with_label("Fill shapes");
+    let filled = gtk4::CheckButton::with_label(&tr("Fill shapes"));
     sidebar.append(&filled);
     let text_view = gtk4::TextView::new();
     text_view.set_wrap_mode(gtk4::WrapMode::WordChar);
     text_view.set_left_margin(6);
     text_view.set_top_margin(6);
     let text = text_view.buffer();
-    text.set_text("Text");
+    text.set_text(&tr("Text"));
     let text_scroll = gtk4::ScrolledWindow::builder()
         .min_content_height(64)
         .max_content_height(96)
@@ -217,7 +218,7 @@ pub fn open(
         .build();
     sidebar.append(
         &gtk4::Label::builder()
-            .label("Text / callout")
+            .label(tr("Text / callout"))
             .xalign(0.0)
             .build(),
     );
@@ -239,12 +240,14 @@ pub fn open(
     sidebar.append(&layers);
     let reset_crop = button("Reset crop", "Restore the full original canvas");
     sidebar.append(&reset_crop);
-    let shadow = gtk4::CheckButton::with_label("Drop shadow");
-    let torn = gtk4::CheckButton::with_label("Torn bottom edge");
+    let shadow = gtk4::CheckButton::with_label(&tr("Drop shadow"));
+    let torn = gtk4::CheckButton::with_label(&tr("Torn bottom edge"));
     sidebar.append(&shadow);
     sidebar.append(&torn);
     let note = gtk4::Label::builder()
-        .label("Projects keep the original image. Share a flattened export when hiding content.")
+        .label(tr(
+            "Projects keep the original image. Share a flattened export when hiding content.",
+        ))
         .wrap(true)
         .xalign(0.0)
         .max_width_chars(26)
@@ -420,15 +423,15 @@ pub fn open(
 }
 fn button(label: &str, tip: &str) -> gtk4::Button {
     gtk4::Button::builder()
-        .label(label)
-        .tooltip_text(tip)
+        .label(tr(label))
+        .tooltip_text(tr(tip))
         .build()
 }
 fn row(label: &str, widget: &impl IsA<gtk4::Widget>) -> gtk4::Box {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     row.append(
         &gtk4::Label::builder()
-            .label(label)
+            .label(tr(label))
             .xalign(0.0)
             .hexpand(true)
             .build(),
@@ -466,19 +469,16 @@ impl Editor {
             .to_string()
     }
     pub fn report_error(&self, error: anyhow::Error) {
-        self.status.set_text(&format!("Error: {error:#}"));
+        self.status
+            .set_text(&tf("Error: {error}", &[("error", format!("{error:#}"))]));
         eprintln!("gsnag editor: {error:#}");
     }
     pub fn update_status(&self) {
         let s = self.state.borrow();
-        self.status.set_text(&format!(
-            "{} · {} × {} px · {} objects · {:.0}% · Ctrl+wheel zoom · Middle-drag pan",
-            s.tool.name(),
-            s.rendered.image.width(),
-            s.rendered.image.height(),
-            s.doc.content.annotations.len(),
-            s.view.zoom * 100.0
-        ));
+        self.status.set_text(&tf("{tool} · {width} × {height} px · {count} objects · {zoom}% · Ctrl+wheel zoom · Middle-drag pan", &[
+            ("tool",tr(s.tool.name())), ("width",s.rendered.image.width().to_string()), ("height",s.rendered.image.height().to_string()),
+            ("count",s.doc.content.annotations.len().to_string()), ("zoom",format!("{:.0}",s.view.zoom*100.0)),
+        ]));
     }
     pub fn sync_selection(&self) {
         self.syncing.set(true);
@@ -521,7 +521,8 @@ impl Editor {
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .unwrap_or("Untitled");
+            .map(str::to_owned)
+            .unwrap_or_else(|| tr("Untitled"));
         self.title.set_title(&format!(
             "{}{}",
             if s.doc.dirty() { "● " } else { "" },
@@ -560,9 +561,9 @@ impl Editor {
             self.finish_edit(result);
         } else {
             drop(s);
-            self.status.set_text(
+            self.status.set_text(&tr(
                 "Choose an object with Select first; these properties also apply to new objects",
-            );
+            ));
         }
     }
     fn delete(&self) {
@@ -619,9 +620,9 @@ impl Editor {
     fn copy(&self) {
         self.cancel_drag();
         self.area.clipboard().set_texture(&self.texture());
-        self.status.set_text(
+        self.status.set_text(&tr(
             "Copied image — keep the editor open until pasted if no clipboard manager is running",
-        );
+        ));
     }
     fn start_save(self: &Rc<Self>, save_as: bool) {
         if self.dialog_open.replace(true) {
@@ -667,8 +668,10 @@ impl Editor {
                 s.doc.mark_saved();
                 drop(s);
                 self.refresh();
-                self.status
-                    .set_text(&format!("Project saved: {}", path.display()));
+                self.status.set_text(&tf(
+                    "Project saved: {path}",
+                    &[("path", path.display().to_string())],
+                ));
                 true
             }
             Err(error) => {
@@ -679,20 +682,20 @@ impl Editor {
     }
     async fn choose_path(&self, project: bool, initial: Option<&Path>) -> Result<Option<PathBuf>> {
         let dialog = gtk4::FileDialog::builder()
-            .title(if project {
+            .title(tr(if project {
                 "Save editable project"
             } else {
                 "Export image"
-            })
-            .accept_label(if project { "Save" } else { "Export" })
+            }))
+            .accept_label(tr(if project { "Save" } else { "Export" }))
             .modal(true)
             .build();
         let filter = gtk4::FileFilter::new();
-        filter.set_name(Some(if project {
+        filter.set_name(Some(&tr(if project {
             "gsnag project (*.gsnag)"
         } else {
             "PNG, JPEG or WebP"
-        }));
+        })));
         for ext in if project {
             &["gsnag"][..]
         } else {
@@ -745,7 +748,10 @@ impl Editor {
                     match result {
                         Ok(()) => {
                             e.state.borrow_mut().export_path = Some(path.clone());
-                            e.status.set_text(&format!("Exported {}", path.display()));
+                            e.status.set_text(&tf(
+                                "Exported {path}",
+                                &[("path", path.display().to_string())],
+                            ));
                         }
                         Err(error) => e.report_error(error),
                     }
@@ -766,15 +772,15 @@ impl Editor {
             return;
         }
         let dialog = adw::AlertDialog::new(
-            Some("Save the editable project?"),
-            Some(
+            Some(&tr("Save the editable project?")),
+            Some(&tr(
                 "Your annotations have unsaved changes. Image exports do not preserve editable objects.",
-            ),
+            )),
         );
         dialog.add_responses(&[
-            ("cancel", "Keep editing"),
-            ("discard", "Discard changes"),
-            ("save", "Save project"),
+            ("cancel", &tr("Keep editing")),
+            ("discard", &tr("Discard changes")),
+            ("save", &tr("Save project")),
         ]);
         dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
         dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);

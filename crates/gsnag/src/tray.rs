@@ -1,3 +1,4 @@
+use gsnag_i18n::{format as tf, tr};
 use std::{cell::Cell, process::Command, rc::Rc, time::Duration};
 
 use anyhow::Result;
@@ -9,6 +10,9 @@ use libadwaita::prelude::*;
 enum Event {
     Region,
     Desktop,
+    Record,
+    Control(&'static str),
+    Language(&'static str),
     Quit,
     Finished(Result<(), String>),
     Ready(Result<ksni::blocking::Handle<Tray>, String>),
@@ -19,6 +23,7 @@ enum Event {
 struct Tray {
     tx: Sender<Event>,
     busy: bool,
+    recording: bool,
 }
 
 impl Tray {
@@ -62,12 +67,13 @@ impl ksni::Tray for Tray {
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
             title: "gsnag".into(),
-            description: if self.busy {
-                "Fångst eller editor är öppen"
+            description: tr(if self.recording {
+                "Recording controls are in the menu"
+            } else if self.busy {
+                "Capture or editor is open"
             } else {
-                "Vänsterklick: fånga region. Högerklick: meny."
-            }
-            .into(),
+                "Left-click: capture region. Right-click: menu."
+            }),
             ..Default::default()
         }
     }
@@ -87,22 +93,70 @@ impl ksni::Tray for Tray {
         use ksni::menu::StandardItem;
         vec![
             StandardItem {
-                label: "Fånga region".into(),
+                label: tr("Capture region"),
                 enabled: !self.busy,
                 activate: Box::new(|t: &mut Self| t.send(Event::Region)),
                 ..Default::default()
             }
             .into(),
             StandardItem {
-                label: "Fånga hela skrivbordet".into(),
+                label: tr("Capture entire desktop"),
                 enabled: !self.busy,
                 activate: Box::new(|t: &mut Self| t.send(Event::Desktop)),
                 ..Default::default()
             }
             .into(),
+            StandardItem {
+                label: tr("Record video…"),
+                enabled: !self.busy,
+                activate: Box::new(|t: &mut Self| t.send(Event::Record)),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: tr("Pause recording"),
+                enabled: self.recording,
+                activate: Box::new(|t: &mut Self| t.send(Event::Control("pause"))),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: tr("Resume recording"),
+                enabled: self.recording,
+                activate: Box::new(|t: &mut Self| t.send(Event::Control("resume"))),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: tr("Stop and save"),
+                enabled: self.recording,
+                activate: Box::new(|t: &mut Self| t.send(Event::Control("stop"))),
+                ..Default::default()
+            }
+            .into(),
+            ksni::menu::SubMenu {
+                label: tr("Language"),
+                submenu: std::iter::once(("auto", tr("System language")))
+                    .chain(
+                        gsnag_i18n::LANGUAGES
+                            .iter()
+                            .map(|(id, name)| (*id, (*name).to_owned())),
+                    )
+                    .map(|(id, name)| {
+                        StandardItem {
+                            label: name,
+                            activate: Box::new(move |t: &mut Self| t.send(Event::Language(id))),
+                            ..Default::default()
+                        }
+                        .into()
+                    })
+                    .collect(),
+                ..Default::default()
+            }
+            .into(),
             ksni::MenuItem::Separator,
             StandardItem {
-                label: "Avsluta gsnag".into(),
+                label: tr("Quit gsnag"),
                 activate: Box::new(|t: &mut Self| t.send(Event::Quit)),
                 ..Default::default()
             }
@@ -123,14 +177,18 @@ fn launcher(
     let status = gtk4::Label::new(None);
     status.set_wrap(true);
     content.append(&status);
-    for (label, desktop) in [("Fånga region", false), ("Fånga hela skrivbordet", true)] {
-        let button = gtk4::Button::with_label(label);
+    for (label, action) in [
+        ("Capture region", 0),
+        ("Capture entire desktop", 1),
+        ("Record video…", 2),
+    ] {
+        let button = gtk4::Button::with_label(&tr(label));
         let tx = tx.clone();
         button.connect_clicked(move |_| {
-            let _ = tx.try_send(if desktop {
-                Event::Desktop
-            } else {
-                Event::Region
+            let _ = tx.try_send(match action {
+                0 => Event::Region,
+                1 => Event::Desktop,
+                _ => Event::Record,
             });
         });
         content.append(&button);
@@ -158,13 +216,22 @@ pub fn run() -> Result<()> {
         .build();
     let started = Rc::new(Cell::new(false));
     app.connect_activate(move |app| {
-        if started.replace(true) { return; }
+        if started.replace(true) {
+            return;
+        }
         let hold = app.hold();
         let (tx, rx) = async_channel::unbounded();
         let worker_tx = tx.clone();
         std::thread::spawn(move || {
-            let tray = Tray { tx: worker_tx.clone(), busy: false };
-            let result = tray.assume_sni_available(true).spawn().map_err(|e| e.to_string());
+            let tray = Tray {
+                tx: worker_tx.clone(),
+                busy: false,
+                recording: false,
+            };
+            let result = tray
+                .assume_sni_available(true)
+                .spawn()
+                .map_err(|e| e.to_string());
             let _ = worker_tx.send_blocking(Event::Ready(result));
         });
         let app = app.clone();
@@ -176,37 +243,73 @@ pub fn run() -> Result<()> {
             let (window, status) = launcher(&app, &tx);
             while let Ok(event) = rx.recv().await {
                 match event {
-                    Event::Ready(Ok(h)) => { handle = Some(h); }
+                    Event::Ready(Ok(h)) => {
+                        handle = Some(h);
+                    }
                     Event::Ready(Err(error)) => {
                         online = false;
-                        status.set_text(&format!("Systemfältet kunde inte startas: {error}\nDu kan fånga härifrån."));
+                        status.set_text(&tf("Tray could not start: {error}", &[("error", error)]));
                         window.present();
                     }
                     Event::Offline => {
                         online = false;
-                        status.set_text("Systemfältet är inte tillgängligt. Du kan fånga härifrån medan gsnag väntar på panelen.");
+                        status.set_text(&tr(
+                            "The system tray is unavailable. You can capture from this window.",
+                        ));
                         window.present();
                     }
                     Event::Online => {
                         online = true;
                         window.set_visible(false);
                     }
-                    Event::Quit => break,
-                    Event::Finished(result) => {
-                        busy = false;
-                        if let Some(h) = &handle { h.update(|t| t.busy = false); }
-                        if let Err(error) = result {
-                            status.set_text(&format!("Fångsten misslyckades: {error}"));
+                    Event::Language(code) => match gsnag_i18n::save_language(code) {
+                        Ok(()) => {
+                            if let Some(h) = &handle {
+                                h.update(|_| {});
+                            }
+                        }
+                        Err(e) => {
+                            status.set_text(&tf("Error: {error}", &[("error", e.to_string())]));
                             window.present();
-                        } else if !online {
-                            status.set_text("Systemfältet är inte tillgängligt. Du kan starta nästa fångst här.");
+                        }
+                    },
+                    Event::Control(action) => {
+                        if let Err(e) = super::recording::command(action) {
+                            status.set_text(&tf("Error: {error}", &[("error", e.to_string())]));
                             window.present();
                         }
                     }
-                    Event::Region | Event::Desktop => {
-                        if busy { continue; }
+                    Event::Quit => break,
+                    Event::Finished(result) => {
+                        busy = false;
+                        if let Some(h) = &handle {
+                            h.update(|t| {
+                                t.busy = false;
+                                t.recording = false;
+                            });
+                        }
+                        if let Err(error) = result {
+                            status.set_text(&tf("Error: {error}", &[("error", error)]));
+                            window.present();
+                        } else if !online {
+                            status.set_text(&tr(
+                                "The system tray is unavailable. You can capture from this window.",
+                            ));
+                            window.present();
+                        }
+                    }
+                    Event::Region | Event::Desktop | Event::Record => {
+                        if busy {
+                            continue;
+                        }
                         busy = true;
-                        if let Some(h) = &handle { h.update(|t| t.busy = true); }
+                        let recording = matches!(event, Event::Record);
+                        if let Some(h) = &handle {
+                            h.update(|t| {
+                                t.busy = true;
+                                t.recording = recording;
+                            });
+                        }
                         window.set_visible(false);
                         let desktop = matches!(event, Event::Desktop);
                         let tx = tx.clone();
@@ -215,18 +318,33 @@ pub fn run() -> Result<()> {
                             std::thread::sleep(Duration::from_millis(250));
                             let result = (|| -> Result<()> {
                                 let exe = std::env::current_exe()?;
-                                let args = if desktop { & ["capture", "output", "--all", "--edit"][..] }
-                                    else { &["capture", "region", "--edit"][..] };
-                                let output = Command::new(exe).args(args).output()?;
-                                anyhow::ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr).trim());
+                                let args = if recording {
+                                    &["record"][..]
+                                } else if desktop {
+                                    &["capture", "output", "--all", "--edit"][..]
+                                } else {
+                                    &["capture", "region", "--edit"][..]
+                                };
+                                let output = Command::new(exe)
+                                    .env("GSNAG_LANGUAGE", gsnag_i18n::language())
+                                    .args(args)
+                                    .output()?;
+                                anyhow::ensure!(
+                                    output.status.success(),
+                                    "{}",
+                                    String::from_utf8_lossy(&output.stderr).trim()
+                                );
                                 Ok(())
-                            })().map_err(|e| format!("{e:#}"));
+                            })()
+                            .map_err(|e| format!("{e:#}"));
                             let _ = tx.send_blocking(Event::Finished(result));
                         });
                     }
                 }
             }
-            if let Some(h) = handle { h.shutdown(); }
+            if let Some(h) = handle {
+                h.shutdown();
+            }
             window.destroy();
             app.quit();
         });

@@ -16,7 +16,7 @@ config = ARTIFACTS / 'config'
 config.mkdir()
 (config / 'rc.xml').write_text('<labwc_config/>')
 (config / 'autostart').write_text('')
-env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), WAYLAND_DISPLAY='wayland-0',
+env = dict(os.environ, GSNAG_LANGUAGE="sv", XDG_RUNTIME_DIR=str(runtime), WAYLAND_DISPLAY='wayland-0',
            WLR_BACKENDS='headless', WLR_HEADLESS_OUTPUTS='1', WLR_RENDERER='pixman',
            GSK_RENDERER='cairo', GTK_A11Y='none', GTK_USE_PORTAL='0',
            GSETTINGS_BACKEND='memory', XDG_CONFIG_HOME=str(config))
@@ -97,7 +97,7 @@ try:
     def click(label):
         menu.Event(items()[label][0], 'clicked', dbus.Int32(0, variant_level=1), dbus.UInt32(0))
 
-    assert set(items()) == {'Fånga region', 'Fånga hela skrivbordet', 'Avsluta gsnag'}
+    assert set(items()) == {'Fånga region', 'Fånga hela skrivbordet', 'Avsluta gsnag', 'Spela in video…', 'Pausa inspelning', 'Återuppta inspelning', 'Stoppa och spara', 'Språk'}
     duplicate = subprocess.run([exe, 'tray'], env=env, capture_output=True, timeout=10)
     assert duplicate.returncode == 0
     assert len(registrations.read_text().splitlines()) == 1

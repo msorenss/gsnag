@@ -101,7 +101,7 @@ pub fn select(desktop: &RgbaImage, outputs: &[Output]) -> Result<Option<Rect>> {
     let mut monitor_handlers = Vec::new();
     for (output, monitor) in outputs.iter().zip(&matched) {
         let window = gtk4::Window::builder()
-            .title("gsnag — select region")
+            .title(gsnag_i18n::tr("gsnag — select region"))
             .decorated(false)
             .default_width(output.logical_width as i32)
             .default_height(output.logical_height as i32)
@@ -202,7 +202,7 @@ pub fn select(desktop: &RgbaImage, outputs: &[Output]) -> Result<Option<Rect>> {
                         key_session.finish(Ok(Some(rect)));
                     } else {
                         *key_session.message.borrow_mut() =
-                            "Draw a non-empty region on a display first".into();
+                            gsnag_i18n::tr("Draw a non-empty region on a display first");
                     }
                 }
                 gdk::Key::Left => key_session.selection.borrow_mut().nudge(-step, 0, resize),
@@ -210,8 +210,9 @@ pub fn select(desktop: &RgbaImage, outputs: &[Output]) -> Result<Option<Rect>> {
                 gdk::Key::Up => key_session.selection.borrow_mut().nudge(0, -step, resize),
                 gdk::Key::Down => key_session.selection.borrow_mut().nudge(0, step, resize),
                 gdk::Key::Tab | gdk::Key::ISO_Left_Tab => {
-                    *key_session.message.borrow_mut() =
-                        "Window selection is unavailable in this version; drag a region".into();
+                    *key_session.message.borrow_mut() = gsnag_i18n::tr(
+                        "Window selection is unavailable in this version; drag a region",
+                    );
                 }
                 gdk::Key::Shift_L | gdk::Key::Shift_R => {
                     let mut selection = key_session.selection.borrow_mut();

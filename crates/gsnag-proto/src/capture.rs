@@ -1,4 +1,8 @@
-use std::{fs::File, io::Read, os::fd::AsFd};
+use std::{
+    fs::File,
+    io::{Read, Seek, SeekFrom},
+    os::fd::AsFd,
+};
 
 use image::{Rgba, RgbaImage, imageops};
 use rustix::fs::{MemfdFlags, memfd_create};
@@ -20,6 +24,7 @@ pub(super) struct CaptureState {
     y_invert: bool,
     transform: u32,
     pub error: Option<String>,
+    presented: Option<Duration>,
 }
 
 impl Client {
@@ -29,6 +34,7 @@ impl Client {
         cursor: bool,
         backend: Backend,
     ) -> Result<CapturedOutput> {
+        self.state.capture = CaptureState::default();
         let (output_proxy, output) = self
             .state
             .outputs
@@ -251,6 +257,16 @@ impl Dispatch<ext_frame::ExtImageCopyCaptureFrameV1, ()> for State {
     ) {
         match event {
             ext_frame::Event::Ready => state.capture.ready = true,
+            ext_frame::Event::PresentationTime {
+                tv_sec_hi,
+                tv_sec_lo,
+                tv_nsec,
+            } => {
+                state.capture.presented = Some(Duration::new(
+                    (u64::from(tv_sec_hi) << 32) | u64::from(tv_sec_lo),
+                    tv_nsec.min(999_999_999),
+                ));
+            }
             ext_frame::Event::Failed { reason } => {
                 state.capture.error = Some(format!("Frame capture failed: {reason:?}"))
             }
@@ -296,12 +312,227 @@ impl Dispatch<wlr_frame::ZwlrScreencopyFrameV1, ()> for State {
             wlr_frame::Event::Flags {
                 flags: WEnum::Value(flags),
             } => c.y_invert = flags.contains(wlr_frame::Flags::YInvert),
-            wlr_frame::Event::Ready { .. } => c.ready = true,
+            wlr_frame::Event::Ready {
+                tv_sec_hi,
+                tv_sec_lo,
+                tv_nsec,
+            } => {
+                c.ready = true;
+                c.presented = Some(Duration::new(
+                    (u64::from(tv_sec_hi) << 32) | u64::from(tv_sec_lo),
+                    tv_nsec.min(999_999_999),
+                ));
+            }
             wlr_frame::Event::Failed => {
                 c.error = Some("Compositor refused or failed screencopy".into())
             }
             _ => {}
         }
+    }
+}
+
+/// A continuous native capture session with a reusable wl_shm buffer.
+/// Construct and use it on the capture worker thread.
+pub struct OutputStream {
+    client: Client,
+    output: Output,
+    proxy: wl_output::WlOutput,
+    ext: Option<ext_session::ExtImageCopyCaptureSessionV1>,
+    wlr: Option<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1>,
+    shm: wl_shm::WlShm,
+    buffer: Option<wl_buffer::WlBuffer>,
+    file: Option<File>,
+    bytes: Vec<u8>,
+    layout: Option<(u32, u32, u32, wl_shm::Format)>,
+    cursor: bool,
+}
+impl OutputStream {
+    pub fn connect(name: &str, cursor: bool, backend: Backend) -> Result<Self> {
+        let mut client = Client::connect()?;
+        let (proxy, output) = client
+            .state
+            .outputs
+            .iter()
+            .find(|(_, o)| o.name == name)
+            .cloned()
+            .context("Recording output disappeared")?;
+        let caps = client.report().capabilities;
+        let use_ext = match backend {
+            Backend::Auto => caps.ext_output_capture,
+            Backend::Ext => true,
+            Backend::Wlr => false,
+        };
+        ensure!(
+            if use_ext {
+                caps.ext_output_capture
+            } else {
+                caps.wlr_screencopy
+            },
+            "Native recording protocol unavailable"
+        );
+        let qh = client.queue.handle();
+        let g = client
+            .global("wl_shm")
+            .context("No shared memory support")?;
+        let shm = client.registry.bind(g.id, 1, &qh, ());
+        let (ext, wlr) = if use_ext {
+            let g = client
+                .global("ext_output_image_capture_source_manager_v1")
+                .unwrap();
+            let manager: ext_output_image_capture_source_manager_v1::ExtOutputImageCaptureSourceManagerV1 = client.registry.bind(g.id, 1, &qh, ());
+            let source = manager.create_source(&proxy, &qh, ());
+            let g = client.global("ext_image_copy_capture_manager_v1").unwrap();
+            let capture: ext_image_copy_capture_manager_v1::ExtImageCopyCaptureManagerV1 =
+                client.registry.bind(g.id, 1, &qh, ());
+            let flags = if cursor {
+                ext_image_copy_capture_manager_v1::Options::PaintCursors
+            } else {
+                ext_image_copy_capture_manager_v1::Options::empty()
+            };
+            let session = capture.create_session(&source, flags, &qh, ());
+            capture.destroy();
+            source.destroy();
+            manager.destroy();
+            client.wait_until(|s| s.capture.constraints_done)?;
+            (Some(session), None)
+        } else {
+            let g = client.global("zwlr_screencopy_manager_v1").unwrap();
+            (
+                None,
+                Some(client.registry.bind(g.id, g.version.min(3), &qh, ())),
+            )
+        };
+        Ok(Self {
+            client,
+            output,
+            proxy,
+            ext,
+            wlr,
+            shm,
+            buffer: None,
+            file: None,
+            bytes: Vec::new(),
+            layout: None,
+            cursor,
+        })
+    }
+    pub fn next_frame(
+        &mut self,
+        stop: &std::sync::atomic::AtomicBool,
+    ) -> Result<(CapturedOutput, Duration)> {
+        let qh = self.client.queue.handle();
+        let c = &mut self.client.state.capture;
+        c.ready = false;
+        c.presented = None;
+        let legacy = self.wlr.as_ref().map(|manager| {
+            c.constraints_done = false;
+            manager.capture_output(i32::from(self.cursor), &self.proxy, &qh, ())
+        });
+        self.client
+            .wait_until_cancel(|s| s.capture.constraints_done, stop)?;
+        let c = &self.client.state.capture;
+        let stride = if self.ext.is_some() {
+            c.width.checked_mul(4).context("Stride overflow")?
+        } else {
+            c.stride
+        };
+        let format = c.format.context("No usable capture pixel format")?;
+        let layout = (c.width, c.height, stride, format);
+        if let Some(expected) = self.layout {
+            ensure!(
+                expected == layout,
+                "Output resolution changed during recording"
+            );
+        }
+        if self.buffer.is_none() {
+            gsnag_core::validate_image_size(c.width, c.height)?;
+            let size = u64::from(stride) * u64::from(c.height);
+            ensure!(
+                size <= 400_000_000 && u64::from(stride) >= u64::from(c.width) * 4,
+                "Invalid recording buffer size"
+            );
+            let file = File::from(memfd_create(c"gsnag-record", MemfdFlags::CLOEXEC)?);
+            file.set_len(size)?;
+            let pool = self
+                .shm
+                .create_pool(file.as_fd(), i32::try_from(size)?, &qh, ());
+            self.buffer = Some(pool.create_buffer(
+                0,
+                c.width as i32,
+                c.height as i32,
+                stride as i32,
+                format,
+                &qh,
+                (),
+            ));
+            pool.destroy();
+            self.file = Some(file);
+            self.bytes.resize(size as usize, 0);
+            self.layout = Some(layout);
+        }
+        let buffer = self.buffer.as_ref().unwrap();
+        let frame = self.ext.as_ref().map(|session| {
+            let frame = session.create_frame(&qh, ());
+            frame.attach_buffer(buffer);
+            frame.damage_buffer(0, 0, c.width as i32, c.height as i32);
+            frame.capture();
+            frame
+        });
+        if let Some(frame) = &legacy {
+            frame.copy(buffer);
+        }
+        self.client.wait_until_cancel(|s| s.capture.ready, stop)?;
+        let file = self.file.as_mut().unwrap();
+        file.seek(SeekFrom::Start(0))?;
+        file.read_exact(&mut self.bytes)?;
+        let c = &self.client.state.capture;
+        let image = orient(
+            decode(&self.bytes, c.width, c.height, stride, format, c.y_invert)?,
+            if self.ext.is_some() {
+                c.transform
+            } else {
+                self.output.transform
+            },
+        )?;
+        let timestamp = c
+            .presented
+            .context("Missing compositor presentation timestamp")?;
+        if let Some(f) = frame {
+            f.destroy();
+        }
+        if let Some(f) = legacy {
+            f.destroy();
+        }
+        self.client.queue.flush()?;
+        ensure!(
+            self.client
+                .state
+                .outputs
+                .iter()
+                .any(|(_, o)| o == &self.output),
+            "Output layout changed during recording"
+        );
+        Ok((
+            CapturedOutput {
+                output: self.output.clone(),
+                image,
+            },
+            timestamp,
+        ))
+    }
+}
+impl Drop for OutputStream {
+    fn drop(&mut self) {
+        if let Some(b) = &self.buffer {
+            b.destroy();
+        }
+        if let Some(s) = &self.ext {
+            s.destroy();
+        }
+        if let Some(m) = &self.wlr {
+            m.destroy();
+        }
+        let _ = self.client.queue.flush();
     }
 }
 

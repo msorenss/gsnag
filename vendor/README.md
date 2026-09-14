@@ -1,0 +1,1 @@
+ffmpeg-next 8.1.0, MIT, vendored from crates.io. The sole source change maps unknown downstream AVPixelFormat values to Pixel::None. Raspberry Pi FFmpeg adds SAND/RPI formats; gsnag uses only RGBA and YUV420P. Keep the upstream LICENSE.

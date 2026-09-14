@@ -56,9 +56,10 @@ def main():
             "Maintainer: gsnag contributors <gsnag@localhost>\n"
             "Section: graphics\nPriority: optional\n"
             f"Depends: {depends}\nInstalled-Size: {(installed_kib + 1023) // 1024}\n"
-            "Description: Native Wayland screenshot and annotation editor\n"
+            "Description: Native Wayland screenshot editor and screen recorder\n"
             " Capture a region and annotate it with shapes, text and image effects.\n"
             " Save editable projects or export PNG, JPEG and WebP images.\n"
+            " Record H.264 video with optional PipeWire system audio and microphone.\n"
             " Requires a Wayland compositor with screencopy and layer-shell support.\n"
         )
         # Directories must be traversable after root-owned package installation.
